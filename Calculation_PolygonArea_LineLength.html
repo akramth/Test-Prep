@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width,user-scalable=no">
+
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+    <title>Maps Toolbar</title>
+
+    <link rel="stylesheet" href="https://js.arcgis.com/3.17/dijit/themes/nihilo/nihilo.css">
+    <link rel="stylesheet" href="https://js.arcgis.com/3.17/esri/css/esri.css">
+    <style>
+        html, body, #mainWindow {
+            font-family: sans-serif;
+            height: 100%;
+            width: 100%;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+        }
+        #header {
+            height: 80px;
+            overflow: auto;
+            padding: 0.5em;
+        }
+    </style>
+
+    <script src="https://js.arcgis.com/3.17/"></script>
+    <script>
+        var map, toolbar, symbol, geomTask;
+        dojo.require("esri.tasks.geometry");
+        dojo.require("dojo.number");
+
+        require([
+            "esri/map",
+            "esri/toolbars/draw",
+            "esri/graphic",
+
+            "esri/symbols/SimpleMarkerSymbol",
+            "esri/symbols/SimpleLineSymbol",
+            "esri/symbols/SimpleFillSymbol",
+
+            "dojo/parser", "dijit/registry",
+            "dojo/_base/lang","esri/tasks/GeometryService","esri/tasks/AreasAndLengthsParameters",
+            "dijit/layout/BorderContainer", "dijit/layout/ContentPane",
+            "dijit/form/Button", "dijit/WidgetSet", "dojo/domReady!"
+        ], function(
+                Map, Draw, Graphic,
+                SimpleMarkerSymbol, SimpleLineSymbol, SimpleFillSymbol,
+                parser, registry ,lang,GeometryService,AreasAndLengthsParameters
+        ) {
+            parser.parse();
+
+            map = new Map("map", {
+                basemap: "streets",
+                center: [-15.469, 36.428],
+                zoom: 3
+            });
+
+
+            map.on("load", createToolbar);
+
+            registry.forEach(function(d) {
+                if ( d.declaredClass === "dijit.form.Button" ) {
+                    console.log(d)
+
+                    d.on("click", activateTool);
+                }
+            });
+
+            function activateTool() {
+                var tool = this.label.toUpperCase().replace(/ /g, "_");
+                toolbar.activate(Draw[tool]);
+                map.hideZoomSlider();
+            }
+
+            function createToolbar(themap) {
+                toolbar = new Draw(map);
+                toolbar.on("draw-end", lang.hitch(map, addToMap));
+            }
+
+            function outputAreaAndLength(evtObj) {
+                var result = evtObj.result;
+                var polygonArea = result.areas[0].toFixed(3) + " acres";
+                alert(polygonArea)
+            }
+
+            function outputLength(result) {
+                var lineLength =dojo.number.format(result.lengths[0] / 1000) + " kilometers"
+                alert(lineLength)
+            }
+
+            function addToMap(evt) {
+                var geometryService = new GeometryService("https://sampleserver6.arcgisonline.com/arcgis/rest/services/Utilities/Geometry/GeometryServer");
+              
+                var symbol;
+                toolbar.deactivate();
+                map.showZoomSlider();
+                switch (evt.geometry.type) {
+                    case "polyline":
+
+                        symbol = new SimpleLineSymbol();
+                        geometry = evt.geometry
+                        var lengthParams = new esri.tasks.LengthsParameters();
+                        lengthParams.polylines = [geometry];
+                        lengthParams.lengthUnit = GeometryService.UNIT_METER;
+                        lengthParams.geodesic = true;
+                        geometryService.lengths(lengthParams);
+                        dojo.connect(geometryService, "onLengthsComplete", outputLength);
+
+                        break;
+                    default:
+
+                        symbol = new SimpleFillSymbol();
+                        geometry = evt.geometry
+                        var areasAndLengthParams = new AreasAndLengthsParameters();
+                        areasAndLengthParams.lengthUnit = GeometryService.UNIT_FOOT;
+                        areasAndLengthParams.areaUnit = GeometryService.UNIT_ACRES;
+                        areasAndLengthParams.calculationType = "geodesic";
+
+                        geometryService.simplify([geometry], function(simplifiedGeometries) {
+                            areasAndLengthParams.polygons = simplifiedGeometries;
+                            geometryService.areasAndLengths(areasAndLengthParams);
+                        });
+
+                        geometryService.on("areas-and-lengths-complete", outputAreaAndLength);
+                        break;
+
+                }
+                var graphic = new Graphic(evt.geometry, symbol);
+                map.graphics.add(graphic);
+            }
+        });
+    </script>
+
+</head>
+<body class="nihilo">
+
+<div id="mainWindow" data-dojo-type="dijit/layout/BorderContainer" data-dojo-props="design:'headline'">
+    <div id="header" data-dojo-type="dijit/layout/ContentPane" data-dojo-props="region:'top'">
+
+        <button data-dojo-type="dijit/form/Button">Polyline</button>
+        <button data-dojo-type="dijit/form/Button">Polygon</button>
+
+    </div>
+    <div id="map" data-dojo-type="dijit/layout/ContentPane" data-dojo-props="region:'center'"></div>
+</div>
+
+</body>
+</html>
